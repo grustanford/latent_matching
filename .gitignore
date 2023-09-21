@@ -1,0 +1,52 @@
+# files yet to be disclosed
+notebooks/
+src/
+requirements.txt
+Makefile
+
+# data and checkpoints
+data/
+models/
+figures/
+
+# cache
+__pycache__/
+*.py[cod]
+.idea/
+.cache
+
+# vscode
+.vscode
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+!.vscode/*.code-snippets
+.history/
+*.vsix
+Footer
+
+# jupyter notebook
+.ipynb_checkpoints
+*/.ipynb_checkpoints/*
+profile_default/
+ipython_config.py
+
+# mac os
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
