@@ -1,13 +1,8 @@
-# files yet to be disclosed
-notebooks/
-src/
-requirements.txt
-Makefile
-
 # data and checkpoints
 data/
+debug/
 models/
-figures/
+assets/
 
 # cache
 __pycache__/
