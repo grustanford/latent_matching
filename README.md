@@ -26,8 +26,6 @@ model.set_prototype(processor)  # set prototype target vector
 outputs = model.get_maps(**inputs)  # [n_layers][n_images,h,w,n_texts] matching maps
 ```
 
---
-
 ## Setup instructions
 
 ### Notebooks
