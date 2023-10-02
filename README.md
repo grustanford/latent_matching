@@ -2,7 +2,7 @@
 
 Semantic matching model aims to isolate semantically driven components from human visual search behavior. Our implementation leverages [CLIP](https://arxiv.org/abs/2103.00020) in a zero-shot manner to generate semantic maps.
 
-![](assets/readme/maps.pdf)
+![](assets/readme/maps.png)
 
 ## Model usage
 
