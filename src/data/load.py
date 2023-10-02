@@ -5,7 +5,6 @@ import numpy as np
 from pathlib import Path
 from PIL import Image
 
-# 
 def load_scanpaths(path, data_split='trainval'):
     """
     load scanpaths from the path.
@@ -44,7 +43,7 @@ def load_scanpaths(path, data_split='trainval'):
     return scanpaths_tp, scanpaths_ta
 
 
-def load_images(path, path_outputs=None, data_split='trainval'):
+def load_images(path, path_outputs=None, data_split='trainval', save_images=True):
     """
     load images from the path.
 
@@ -52,6 +51,7 @@ def load_images(path, path_outputs=None, data_split='trainval'):
         path: path to coco-search18 dataset
         path_outputs: path to save the images. None if not saving.
         data_split: 'trainval', 'test'
+        save_images: True if saving images. False if returning paths only.
 
     return
         images [dict] : dictionary of PIL images
@@ -60,44 +60,48 @@ def load_images(path, path_outputs=None, data_split='trainval'):
 
     # load scanpaths
     scanpaths_tp, scanpaths_ta = load_scanpaths(path, data_split=data_split)
+    names = np.unique([s['name'] for s in scanpaths_ta+scanpaths_tp])
 
     # list all the image names
     dir_tp = Path(path)/'tp/images'
     dir_ta = Path(path)/'ta/images'
-    files_tp = glob.glob(dir_tp/'**/*.jpg', recursive=True)
-    files_ta = glob.glob(dir_ta/'**/*.jpg', recursive=True)
-    files = np.array(files_tp + files_ta)
+    files_tp = glob.glob(str(dir_tp/'**/*.jpg'), recursive=True)
+    files_ta = glob.glob(str(dir_ta/'**/*.jpg'), recursive=True)
+    files = np.array([f for f in files_tp + files_ta if Path(f).name in names])
+   
+    if save_images:
+        images = {}
+        for v_jpg in names:
+            path_images = [f for f in files if v_jpg in f]
+            images[ v_jpg ] = Image.open(path_images[0])
+        images_idx = np.array(list(images.keys()))
 
-    # 
-    names = np.unique([s['name'] for s in scanpaths_ta+scanpaths_tp])
-    images = {}
-    for v_jpg in names:
-        path_images = [f for f in files if v_jpg in f]
-        images[ v_jpg ] = Image.open(path_images[0])
-    images_idx = np.array(list(images.keys()))
+        # saving images
+        if path_outputs is not None: 
+            path_output_images = Path(path_outputs)/'images'
+            path_output_images.mkdir(parents=True, exist_ok=True)
+            
+            with open(path_output_images/f'images_{data_split}.pkl', 'wb') as f:
+                pickle.dump(images, f)
+            with open(path_output_images/f'indices_{data_split}.pkl', 'wb') as f:
+                pickle.dump(images_idx, f)
+        return images, images_idx
 
-    # saving images
-    if path_outputs is not None: 
+    else:
+        filesn = np.array([Path(f).name for f in files])
+        _, idx = np.unique(filesn, return_index=True)
+        files  = files[np.sort(idx)]
+        return files
+    
 
-        path_output_images = Path(path_outputs)/'images'
-        path_output_images.mkdir(parents=True, exist_ok=True)
-        
-        with open(path_output_images/f'images/images_{data_split}.pkl', 'wb') as f:
-            pickle.dump(images, f)
-        with open(path_output_images/f'images/indices_{data_split}.pkl', 'wb') as f:
-            pickle.dump(images_idx, f)
-
-    return images, images_idx
-
-
-# 
-def load_indices(scanpaths, images_idx=None, path_index=None, data_split='trainval'):
+def load_indices(scanpaths=None, images_idx=None, path_prcd=None, path_scanpath=None, data_split='trainval'):
     """
     load indices from the path.
     inputs
         scanpaths [tp,ta] : list of scanpaths
         images_idx [list] : list of image indices
-        path_index: path to image indices
+        path_prcd: path to the processed data
+        path_scanpath: path to scanpaths
         data_split: 'trainval', 'test'
     
     return
@@ -106,12 +110,15 @@ def load_indices(scanpaths, images_idx=None, path_index=None, data_split='trainv
         sbj_dict [dict] : dictionary of subject indices, required for score evaluation
     """
 
-    if images_idx is None and path_index is not None:
-        with open(Path(path_index)/'images'/f'indices_{data_split}.pkl', 'rb') as f:
+    if images_idx is None and path_prcd is not None:
+        with open(Path(path_prcd)/'images'/f'indices_{data_split}.pkl', 'rb') as f:
             images_idx = pickle.load(f)
 
     # load scanpaths
-    scanpaths_tp, scanpaths_ta = scanpaths
+    if scanpaths is None and path_scanpath is not None:
+        scanpaths_tp, scanpaths_ta = load_scanpaths(path_scanpath, data_split=data_split)
+    else:
+        scanpaths_tp, scanpaths_ta = scanpaths
 
     #
     tp_img = [s['name'] for s in scanpaths_tp]
@@ -125,10 +132,13 @@ def load_indices(scanpaths, images_idx=None, path_index=None, data_split='trainv
     tp_tgt_idx = np.array([np.where(t==list_tgt)[0][0] for t in tp_tgt])
     ta_tgt_idx = np.array([np.where(t==list_tgt)[0][0] for t in ta_tgt])
 
+    tp_sbj = np.array([s['subject'] for s in scanpaths_tp])
+    ta_sbj = np.array([s['subject'] for s in scanpaths_ta])
+
     # make index for evaluation
     idx_eval_tp = []
     img_list = np.unique(tp_img_idx)
-    for v_img in img_list:    
+    for v_img in img_list:
         # list the corresponding tasks (indexes)
         tgt_list = np.unique( tp_tgt_idx[tp_img_idx==v_img] )
         
@@ -153,12 +163,14 @@ def load_indices(scanpaths, images_idx=None, path_index=None, data_split='trainv
     tp_dict = {
         'idx_img': tp_img_idx,
         'idx_tgt': tp_tgt_idx,
+        'idx_sbj': tp_sbj,
         'scanpaths': scanpaths_tp, 
         'idx_eval': idx_eval_tp,
     }
     ta_dict = {
         'idx_img': ta_img_idx,
         'idx_tgt': ta_tgt_idx,
+        'idx_sbj': ta_sbj,
         'scanpaths': scanpaths_ta, 
         'idx_eval': idx_eval_ta,
     }

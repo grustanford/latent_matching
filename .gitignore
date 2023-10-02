@@ -10,6 +10,9 @@ __pycache__/
 .idea/
 .cache
 
+# include readme assets
+!assets/readme/
+
 # vscode
 .vscode
 !.vscode/settings.json

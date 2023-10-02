@@ -4,10 +4,6 @@ from typing import Optional
 from transformers import CLIPModel
 from transformers.models.clip.configuration_clip import CLIPConfig
 
-AVAILABLE_MODELS = [
-    'ViT-B/32', 'ViT-L/14'
-]
-
 TARGETS_COCOSEARCH18 = {
     'bottle'       : 'a photo of a bottle',
     'bowl'         : 'a photo of a bowl',
@@ -29,26 +25,87 @@ TARGETS_COCOSEARCH18 = {
     'tv'           : 'a photo of a tv'
 }
 
-SIZE_CLIP = [16,16]
-X_MAPS = slice(3,13)
-Y_MAPS = slice(0,16)
+SLICES_COCOSEARCH18 = {
+    # slice of the image to crop { clip_size: (h_slice, w_slice) }
+    7  : ( slice( 1, 6 ), slice( 0, 7 ) ),
+    16 : ( slice( 3,13 ), slice( 0,16 ) ),
+}
+
 
 class SemanticMatchingModel(CLIPModel):
     
-    def __init__(self, config:CLIPConfig, targets=TARGETS_COCOSEARCH18):
+    def __init__(self, config:CLIPConfig, 
+                 targets=TARGETS_COCOSEARCH18,
+                 slices=SLICES_COCOSEARCH18):
         super().__init__(config)
         self.prototype = torch.zeros((1,self.projection_dim))
         self.targets   = targets
         self.resize    = True
-        
+        self.get_clip_size()
+        self.h_slice   = slices[self.size_clip[0]][0]
+        self.w_slice   = slices[self.size_clip[1]][1]
+
+
     def set_prototype(self, processor):
         """set a target prototype representation"""        
         target_embeds = processor.tokenizer(text=list(self.targets.values()), return_tensors="pt", padding=True)
-        target_embeds = self.text_model(**target_embeds.to(self.device))
-        target_embeds = self.text_projection(target_embeds[1])
-        target_embeds = target_embeds / target_embeds.norm(p=2, dim=-1, keepdim=True)
+        target_embeds = self.get_text_embeds(**target_embeds.to(self.device))
         prototype = torch.mean(target_embeds, dim=0, keepdims=True)
         self.prototype = prototype
+
+
+    def get_clip_size(self):
+        """get the number of patches in CLIP"""
+        im_sz = self.config.vision_config.image_size
+        ph_sz = self.config.vision_config.patch_size
+        self.size_clip = [ int(im_sz/ph_sz), int(im_sz/ph_sz) ]
+
+
+    def get_image_embeds(self, 
+                         pixel_values: Optional[torch.FloatTensor] = None,
+                         **kwargs
+                         ):
+        """get image embeddings"""
+        image_embeds = self.vision_model(
+            pixel_values=pixel_values,
+            output_hidden_states=True
+        )
+        return image_embeds
+
+
+    def get_text_embeds(self,
+                        input_ids: Optional[torch.LongTensor] = None,
+                        attention_mask: Optional[torch.Tensor] = None,
+                        position_ids: Optional[torch.LongTensor] = None,
+                        **kwargs
+                        ):
+        """get text embeddings"""
+        text_outputs = self.text_model(
+            input_ids      = input_ids,
+            attention_mask = attention_mask,
+            position_ids   = position_ids
+        )
+        text_embeds = text_outputs[1]
+        text_embeds = self.text_projection(text_embeds)
+        text_embeds = text_embeds / text_embeds.norm(p=2, dim=-1, keepdim=True)
+
+        return text_embeds
+
+
+    def get_matches(self, text_embeds, image_embeds, **kwargs):
+        """get matching maps"""
+        matches = [] # matching maps [N_Layer]
+        for h in image_embeds['hidden_states']:
+            match = self.visual_projection(h) # projection onto image-text space
+            match = match[:, 1:, :] # take out the classification token
+            match = match @ (text_embeds - self.prototype).T # matching
+            match = torch.sigmoid(-match) # nonlinearity
+            if self.resize:
+                match = match.reshape( (-1, *self.size_clip, len(text_embeds)) )
+                match = match[:, self.h_slice, self.w_slice, :]
+            matches.append(match)
+        return matches
+
 
     def get_maps(self,
                  input_ids: Optional[torch.LongTensor] = None,
@@ -83,33 +140,18 @@ class SemanticMatchingModel(CLIPModel):
         ```"""
 
         # text encoder
-        text_outputs = self.text_model(
+        text_embeds = self.get_text_embeds(
             input_ids      = input_ids,
             attention_mask = attention_mask,
             position_ids   = position_ids
         )
-        text_embeds = text_outputs[1]
-        text_embeds = self.text_projection(text_embeds)
-        text_embeds = text_embeds / text_embeds.norm(p=2, dim=-1, keepdim=True)
         
         # image encoder
-        image_outputs = self.vision_model(
-            pixel_values=pixel_values,
-            output_hidden_states=True
+        image_embeds = self.get_image_embeds(
+            pixel_values=pixel_values
         )
         
         # image-text matching
-        image_embeds = [] # matching maps [N_Layer]
-        for h in image_outputs['hidden_states']:
-            image_embed = h[:, 1:, :] # take out the classification token
-            image_embed = self.visual_projection(image_embed) # projection onto image-text space
-            image_embed = image_embed @ (text_embeds - self.prototype).T # matching
-            image_embed = torch.sigmoid(-image_embed) # nonlinearity
-
-            if self.resize:
-                image_embed = image_embed.reshape( (-1, *SIZE_CLIP, len(text_embeds)) )
-                image_embed = image_embed[:, X_MAPS,Y_MAPS, :]
-
-            image_embeds.append(image_embed)
-
-        return image_embeds
+        matches = self.get_matches(text_embeds, image_embeds)
+        
+        return matches

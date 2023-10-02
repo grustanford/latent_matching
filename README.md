@@ -2,6 +2,7 @@
 
 Semantic matching model aims to isolate semantically driven components from human visual search behavior. Our implementation leverages [CLIP](https://arxiv.org/abs/2103.00020) in a zero-shot manner to generate semantic maps.
 
+![](assets/readme/maps.pdf)
 
 ## Model usage
 
@@ -9,7 +10,7 @@ Semantic matching model aims to isolate semantically driven components from huma
 from PIL import Image
 import requests
 from transformers import CLIPProcessor
-import SemanticMatchingModel
+from smm import SemanticMatchingModel
 
 model = SemanticMatchingModel.from_pretrained("openai/clip-vit-large-patch14")
 processor = CLIPProcessor.from_pretrained("openai/clip-vit-large-patch14")

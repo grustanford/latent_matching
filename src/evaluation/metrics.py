@@ -4,7 +4,7 @@ import numpy as np
 from scipy.stats import zscore
 from pysaliency.roc import general_roc
 
-# 
+# parameters
 params = {
     # index parameters
     'indexing_by_eval': False,
@@ -14,8 +14,8 @@ params = {
 
     # image parameters
     'downsample_factor': 105,
-    'n_x': 16,
-    'n_y': 10,
+    'n_w': 16,  # map width 
+    'n_h': 10,  # map height
 
     # print parameters
     'verbose': True,
@@ -23,9 +23,10 @@ params = {
 }
 
     
-def obtain_fixations_xy(scanpaths, idx_img, idx_tgt, idx_eval, idx_include=None, negative=True, params=params):
+def get_positions(scanpaths, idx_img, idx_tgt, idx_eval, idx_include=None, negative=True, params=params, **kwargs):
     """
     Obtain x,y positions of the fixations.
+    x,y coordinates correspond to the axes along with the width and height of images, respectively.
 
     inputs
         scanpaths [n_scanpaths]: list of scanpath dictionaries.
@@ -96,7 +97,7 @@ def obtain_fixations_xy(scanpaths, idx_img, idx_tgt, idx_eval, idx_include=None,
             nnan      = (~np.isnan(xp)) & (~np.isnan(yp))
             xp        = (xp[nnan] // params['downsample_factor']).astype(int) 
             yp        = (yp[nnan] // params['downsample_factor']).astype(int) 
-            nnan      = (xp >= 0) & (xp < params['n_x']) & (yp >= 0) & (yp < params['n_y'])
+            nnan      = (xp >= 0) & (xp < params['n_w']) & (yp >= 0) & (yp < params['n_h'])
             xp, yp    = xp[nnan], yp[nnan]
             _xy_pos.append(np.array([xp, yp], dtype=int))
 
@@ -105,7 +106,7 @@ def obtain_fixations_xy(scanpaths, idx_img, idx_tgt, idx_eval, idx_include=None,
                 nnan      = (~np.isnan(xn)) & (~np.isnan(yn))
                 xn        = (xn[nnan] // params['downsample_factor']).astype(int) 
                 yn        = (yn[nnan] // params['downsample_factor']).astype(int) 
-                nnan      = (xn >= 0) & (xn < params['n_x']) & (yn >= 0) & (yn < params['n_y'])
+                nnan      = (xn >= 0) & (xn < params['n_w']) & (yn >= 0) & (yn < params['n_h'])
                 xn, yn    = xn[nnan], yn[nnan]
                 _xy_neg.append(np.array([xn, yn], dtype=int))
 
@@ -122,19 +123,22 @@ def obtain_fixations_xy(scanpaths, idx_img, idx_tgt, idx_eval, idx_include=None,
         print('total elapsed time: %.2f sec' % (e_time - s_time))
 
     if negative:
-        return xy_pos, xy_neg
+        return {
+            'xy_pos': xy_pos,
+            'xy_neg': xy_neg
+        }
     else: 
-        return xy_pos
+        return {
+            'xy_pos': xy_pos
+        }
 
 
-
-# 
-def nss(maps, fix_pos=None, idx_eval=None, idx_img=None, idx_tgt=None, idx_include=None, scanpaths=None, params=params):
+def nss(maps, fix_pos=None, idx_eval=None, idx_img=None, idx_tgt=None, idx_include=None, scanpaths=None, params=params, **kwargs):
     """
     Normalized scanpath saliency (NSS) score.
 
     inputs
-        maps [n_imgs, n_x, n_y] or [n_imgs, n_layers, n_x, n_y, n_tgts]: array of predictive maps.
+        maps [n_imgs, n_h, n_w] or [n_imgs, n_layers, n_h, n_w, n_tgts]: array of predictive maps.
         fix_pos [n_tasks]: precomputed list of fixations (x,y) corresponding to the positive distribution
         idx_eval [n_tasks,2]: task (image-target pair) index to be evaluated.
         idx_img [n_scanpaths]: image indices of scanpaths.
@@ -153,20 +157,20 @@ def nss(maps, fix_pos=None, idx_eval=None, idx_img=None, idx_tgt=None, idx_inclu
     if len(maps.shape) == 3:
         maps = maps[:,np.newaxis,:,:,np.newaxis]
 
-    _, n_layers, n_y, n_x, n_tgts = maps.shape
+    _, n_layers, n_h, n_w, n_tgts = maps.shape
 
     #
     if fix_pos is None:
         print( "precomputed fixations not found. obtaining fixations..." )
-        fix_pos = obtain_fixations_xy(scanpaths=scanpaths, 
-                                      idx_img=idx_img, 
-                                      idx_tgt=idx_tgt, 
-                                      idx_eval=idx_eval, 
-                                      idx_include=idx_include, 
-                                      negative=False, params=params)
+        fix_pos = get_positions(scanpaths=scanpaths, 
+                                idx_img=idx_img, 
+                                idx_tgt=idx_tgt, 
+                                idx_eval=idx_eval, 
+                                idx_include=idx_include, 
+                                negative=False, params=params).values()
 
     # z-scoring
-    maps = zscore(maps.reshape((-1,n_layers,n_y*n_x,n_tgts)), axis=2, nan_policy='omit').reshape((-1,n_layers,n_y,n_x,n_tgts))
+    maps = zscore(maps.reshape((-1,n_layers,n_h*n_w,n_tgts)), axis=2, nan_policy='omit').reshape((-1,n_layers,n_h,n_w,n_tgts))
 
     # 
     scores = np.nan*np.zeros((n_orders,n_layers,n_tasks))
@@ -201,13 +205,12 @@ def nss(maps, fix_pos=None, idx_eval=None, idx_img=None, idx_tgt=None, idx_inclu
     return scores
 
 
-# 
-def auc(maps, fix_pos=None, idx_eval=None, idx_img=None, idx_tgt=None, idx_include=None, scanpaths=None, params=params):
+def auc(maps, fix_pos=None, idx_eval=None, idx_img=None, idx_tgt=None, idx_include=None, scanpaths=None, params=params, **kwargs):
     """
     Area under the ROC curve (AUC) score, with the negative distribution generated from uniform sampling of the task predictive map responses.
 
     inputs
-        maps [n_imgs, n_x, n_y] or [n_imgs, n_layers, n_x, n_y, n_tgts]: array of predictive maps.
+        maps [n_imgs, n_h, n_w] or [n_imgs, n_layers, n_h, n_w, n_tgts]: array of predictive maps.
         fix_pos [n_tasks]: precomputed list of fixations (x,y) corresponding to the positive distribution
         idx_eval [n_tasks,2]: task (image-target pair) index to be evaluated.
         idx_img [n_scanpaths]: image indices of scanpaths.
@@ -231,12 +234,12 @@ def auc(maps, fix_pos=None, idx_eval=None, idx_img=None, idx_tgt=None, idx_inclu
 
     if fix_pos is None:
         print( "precomputed fixations not found. obtaining fixations..." )
-        fix_pos = obtain_fixations_xy(scanpaths=scanpaths, 
-                                      idx_img=idx_img, 
-                                      idx_tgt=idx_tgt, 
-                                      idx_eval=idx_eval, 
-                                      idx_include=idx_include, 
-                                      negative=False, params=params)
+        fix_pos = get_positions(scanpaths=scanpaths, 
+                                idx_img=idx_img, 
+                                idx_tgt=idx_tgt, 
+                                idx_eval=idx_eval, 
+                                idx_include=idx_include, 
+                                negative=False, params=params).values()
                 
     # 
     scores = np.nan*np.zeros((n_orders,n_layers,n_tasks))
@@ -277,13 +280,12 @@ def auc(maps, fix_pos=None, idx_eval=None, idx_img=None, idx_tgt=None, idx_inclu
     return scores
 
 
-# 
-def sauc(maps, fix_pos=None, fix_neg=None, idx_eval=None, idx_img=None, idx_tgt=None, idx_include=None, scanpaths=None, params=params):
+def sauc(maps, fix_pos=None, fix_neg=None, idx_eval=None, idx_img=None, idx_tgt=None, idx_include=None, scanpaths=None, params=params, **kwargs):
     """
     Suffled AUC score, with the negative distribution generated from sampling of fixations from the other tasks. 
 
     inputs
-        maps [n_imgs, n_x, n_y] or [n_imgs, n_layers, n_x, n_y, n_tgts]: array of predictive maps.
+        maps [n_imgs, n_h, n_w] or [n_imgs, n_layers, n_h, n_w, n_tgts]: array of predictive maps.
         fix_pos [n_tasks]: precomputed list of fixations (x,y) corresponding to the positive distribution
         fix_pos [n_tasks]: precomputed list of fixations (x,y) corresponding to the negative distribution
         idx_img [n_scanpaths]: image indices of scanpaths.
@@ -308,12 +310,12 @@ def sauc(maps, fix_pos=None, fix_neg=None, idx_eval=None, idx_img=None, idx_tgt=
     # 
     if fix_pos is None:
         print( "precomputed fixations not found. obtaining fixations..." )
-        fix_pos, fix_neg = obtain_fixations_xy(scanpaths=scanpaths, 
-                                               idx_img=idx_img, 
-                                               idx_tgt=idx_tgt, 
-                                               idx_eval=idx_eval, 
-                                               idx_include=idx_include, 
-                                               negative=True, params=params)
+        fix_pos, fix_neg = get_positions(scanpaths=scanpaths, 
+                                         idx_img=idx_img, 
+                                         idx_tgt=idx_tgt, 
+                                         idx_eval=idx_eval, 
+                                         idx_include=idx_include, 
+                                         negative=True, params=params).values()
 
     # 
     scores = np.nan*np.zeros((n_orders,n_layers,n_tasks))
