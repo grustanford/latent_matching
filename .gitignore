@@ -1,6 +1,6 @@
 # data and checkpoints
 debug/
-assets/
+assets/*
 /data/
 /models/
 
@@ -11,7 +11,7 @@ __pycache__/
 .cache
 
 # include readme assets
-!assets/readme/
+!assets/readme
 
 # vscode
 .vscode
