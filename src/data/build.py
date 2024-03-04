@@ -13,4 +13,4 @@ path_data = args.path_data
 path_prcd = args.path_prcd
 
 print("Building list of images and indice...")
-_, _ = load.load_images(path_data, path_outputs=path_prcd, data_split=data_split)
+_ = load.load_images(path_data, path_outputs=path_prcd, data_split=data_split)

@@ -1,4 +1,4 @@
-"""make semantic searcher model predictive maps"""
+"""make semantic similarity maps"""
 import os
 import sys
 import pickle
@@ -73,7 +73,7 @@ if high_res:
     SIZE_IMAGE = model.size_clip
 
     # we have safety margin along height for coco-search18 dataset
-    SIZE_FRAME = (SIZE_IMAGE[0]+params['margin'], SIZE_IMAGE[1])
+    SIZE_FRAME = (224+params['margin'], 224)
 
     def displace(img):    
         image = img.resize((224,140))
@@ -85,8 +85,8 @@ if high_res:
             for ih in range(params['margin']):
                 _le = iw*params['stride']
                 _up = ih*params['stride']
-                _ri = _le+SIZE_IMAGE[1]
-                _lo = _up+SIZE_IMAGE[0]
+                _ri = _le+224
+                _lo = _up+224
                 image.append( image_frame.crop((_le,_up,_ri,_lo)) )    
                 
         return image

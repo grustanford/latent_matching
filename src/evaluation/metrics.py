@@ -44,6 +44,7 @@ def get_positions(scanpaths, idx_img, idx_tgt, idx_eval, idx_include=None, negat
     s_time   = time.time()
     n_tasks  = len(idx_eval)
     n_orders = 1 if params['scan_orders'] is None else len(params['scan_orders'])
+    scan_orders = [0] if params['scan_orders'] is None else params['scan_orders']
 
     # obtain x,y positions [with filters]
     if params['scan_orders'] is None:
@@ -79,7 +80,7 @@ def get_positions(scanpaths, idx_img, idx_tgt, idx_eval, idx_include=None, negat
             _xy_pos = []
 
         #
-        for i_o in range(n_orders):
+        for _, v_o in enumerate(scan_orders):
 
             if params['scan_orders'] is None:
                 xp = np.concatenate( [s if v else [] for s,v in zip(xs,idxp)] )
@@ -89,9 +90,9 @@ def get_positions(scanpaths, idx_img, idx_tgt, idx_eval, idx_include=None, negat
                     yn = np.concatenate( [s if v else [] for s,v in zip(ys,idxn)] )
 
             else:
-                xp, yp = xs[i_o][idxp], ys[i_o][idxp]
+                xp, yp = xs[v_o][idxp], ys[v_o][idxp]
                 if negative:
-                    xn, yn = xs[i_o][idxn], ys[i_o][idxn]
+                    xn, yn = xs[v_o][idxn], ys[v_o][idxn]
             
             # obtain positive fixation positions
             nnan      = (~np.isnan(xp)) & (~np.isnan(yp))
@@ -153,6 +154,7 @@ def nss(maps, fix_pos=None, idx_eval=None, idx_img=None, idx_tgt=None, idx_inclu
     s_time   = time.time()
     n_tasks  = len(idx_eval)
     n_orders = 1 if params['scan_orders'] is None else len(params['scan_orders'])
+    scan_orders = [0] if params['scan_orders'] is None else params['scan_orders']
 
     if len(maps.shape) == 3:
         maps = maps[:,np.newaxis,:,:,np.newaxis]
@@ -162,7 +164,7 @@ def nss(maps, fix_pos=None, idx_eval=None, idx_img=None, idx_tgt=None, idx_inclu
     #
     if fix_pos is None:
         print( "precomputed fixations not found. obtaining fixations..." )
-        fix_pos = get_positions(scanpaths=scanpaths, 
+        fix_pos = get_positions(scanpaths=scanpaths,
                                 idx_img=idx_img, 
                                 idx_tgt=idx_tgt, 
                                 idx_eval=idx_eval, 
@@ -182,10 +184,10 @@ def nss(maps, fix_pos=None, idx_eval=None, idx_img=None, idx_tgt=None, idx_inclu
         if n_tgts == 1: tgt = 0
 
         # taking the means of positives
-        for i_o in range(n_orders):
+        for i_o, v_o in enumerate(scan_orders):
 
             # obtain x,y positions
-            xp, yp = fix_pos[i_eval][i_o]
+            xp, yp = fix_pos[i_eval][v_o]
 
             positives = maps[i_eval,:,:,:,tgt] if params['indexing_by_eval'] else maps[img,:,:,:,tgt]
             positives = positives[:,yp,xp]
@@ -225,6 +227,7 @@ def auc(maps, fix_pos=None, idx_eval=None, idx_img=None, idx_tgt=None, idx_inclu
     s_time   = time.time()
     n_tasks  = len(idx_eval)
     n_orders = 1 if params['scan_orders'] is None else len(params['scan_orders'])
+    scan_orders = [0] if params['scan_orders'] is None else params['scan_orders']
 
     # 
     if len(maps.shape) == 3:
@@ -255,10 +258,10 @@ def auc(maps, fix_pos=None, idx_eval=None, idx_img=None, idx_tgt=None, idx_inclu
         negatives = negatives.reshape((n_layers,-1))
 
         # generation of positives
-        for i_o in range(n_orders):
+        for i_o, v_o in enumerate(scan_orders):
 
             # obtain x,y positions
-            xp, yp = fix_pos[i_eval][i_o]
+            xp, yp = fix_pos[i_eval][v_o]
 
             positives = maps[i_eval,:,:,:,tgt] if params['indexing_by_eval'] else maps[img,:,:,:,tgt]
             positives = positives[:,yp,xp]
@@ -300,6 +303,7 @@ def sauc(maps, fix_pos=None, fix_neg=None, idx_eval=None, idx_img=None, idx_tgt=
     s_time   = time.time()
     n_tasks  = len(idx_eval)
     n_orders = 1 if params['scan_orders'] is None else len(params['scan_orders'])
+    scan_orders = [0] if params['scan_orders'] is None else params['scan_orders']
 
     # 
     if len(maps.shape) == 3:
@@ -327,11 +331,11 @@ def sauc(maps, fix_pos=None, fix_neg=None, idx_eval=None, idx_img=None, idx_tgt=
         if n_tgts == 1: tgt = 0
 
         #
-        for i_o in range(n_orders):
+        for i_o, v_o in enumerate(scan_orders):
 
             # obtain x,y positions
-            xp, yp = fix_pos[i_eval][i_o]
-            xn, yn = fix_neg[i_eval][i_o]
+            xp, yp = fix_pos[i_eval][v_o]
+            xn, yn = fix_neg[i_eval][v_o]
 
             negatives = maps[i_eval,:,:,:,tgt] if params['indexing_by_eval'] else maps[img,:,:,:,tgt]
             negatives = negatives[:,yn,xn]

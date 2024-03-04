@@ -1,35 +1,206 @@
 """generate maps for semantic matching model (using CLIP)"""
 import torch
+import numpy as np
+from PIL import Image
 from typing import Optional
-from transformers import CLIPModel
+from transformers import CLIPModel, CLIPProcessor
 from transformers.models.clip.configuration_clip import CLIPConfig
+from transformers.tokenization_utils_base import BatchEncoding
 
 TARGETS_COCOSEARCH18 = {
-    'bottle'       : 'a photo of a bottle',
-    'bowl'         : 'a photo of a bowl',
-    'car'          : 'a photo of a car',
-    'chair'        : 'a photo of a chair',
-    'clock'        : 'a photo of a clock',
-    'cup'          : 'a photo of a cup',
-    'fork'         : 'a photo of a fork',
-    'keyboard'     : 'a photo of a keyboard',
-    'knife'        : 'a photo of a knife',
-    'laptop'       : 'a photo of a laptop',
-    'microwave'    : 'a photo of a microwave',
-    'mouse'        : 'a photo of a mouse',
-    'oven'         : 'a photo of an oven',
-    'potted plant' : 'a photo of a potted plant',
-    'sink'         : 'a photo of a sink',
-    'stop sign'    : 'a photo of a stop sign',
-    'toilet'       : 'a photo of a toilet',
-    'tv'           : 'a photo of a tv'
+    'bottle'       : 'bottle',
+    'bowl'         : 'bowl',
+    'car'          : 'car',
+    'chair'        : 'chair',
+    'clock'        : 'clock',
+    'cup'          : 'cup',
+    'fork'         : 'fork',
+    'keyboard'     : 'keyboard',
+    'knife'        : 'knife',
+    'laptop'       : 'laptop',
+    'microwave'    : 'microwave',
+    'mouse'        : 'mouse',
+    'oven'         : 'oven',
+    'potted plant' : 'potted plant',
+    'sink'         : 'sink',
+    'stop sign'    : 'stop sign',
+    'toilet'       : 'toilet',
+    'tv'           : 'tv'
 }
+
 
 SLICES_COCOSEARCH18 = {
     # slice of the image to crop { clip_size: (h_slice, w_slice) }
     7  : ( slice( 1, 6 ), slice( 0, 7 ) ),
     16 : ( slice( 3,13 ), slice( 0,16 ) ),
 }
+
+
+class Encoding(BatchEncoding):
+
+    def to(self, device):
+        from transformers.utils import requires_backends, is_torch_device
+        requires_backends(self, ["torch"])
+
+        if isinstance(device, str) or is_torch_device(device) or isinstance(device, int):
+            self.data = {k: [_v.to(device=device) for _v in v] if isinstance(v, list) else v.to(device=device) 
+                         for k, v in self.data.items()}
+        else:
+            print(f"Attempting to cast a BatchEncoding to type {str(device)}. This is not supported.")
+
+        return self
+
+
+class SemanticMatchingProcessor(CLIPProcessor):
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+
+    def __call__(self, text=None, images=None, 
+                 return_tensors=None, 
+                 patch_size=14,
+                 super_resolution=None,
+                 n_shifts=(1,1),
+                 **kwargs):
+        """
+        Overriding the `__call__` method of CLIPProcessor.
+
+        Args:
+            text (str or List[str]):
+                The text to be encoded. Can be a string, a list of strings (tokenized string using the `self.tokenizer`).
+            images (str or List[str]):
+                The image to be encoded. Can be a string representing the path to an image, a list of strings
+                representing paths to images or a list of numpy.ndarray.
+            return_tensors (str, optional):
+                If set, will return tensors instead of list of python integers.
+                Acceptable values are 'tf' and 'pt' (default: None).
+            patch_size (int, optional):
+                The patch size to use when encoding the image.
+            super_resolution (float, optional):
+                The super resolution factor. 1 means full resolution compared to the patch size.
+        """
+ 
+        if text is None or images is None:
+            raise ValueError("You have to specify both text and images.")
+
+        if isinstance(images, Image.Image):
+            images = [images]
+
+        if isinstance(text, str):
+            raise ValueError("The text should be a list of strings.")
+
+        elif isinstance(text[0], str):
+            text = [text] * len(images)
+        
+        elif len(text) != len(images):
+            raise ValueError("The number of text and images should be the same.")
+        
+        # text encoding
+        text = [self.tokenizer(t, return_tensors=return_tensors, **kwargs) for t in text]
+        encoding = {}
+        for key in text[0].keys():
+            encoding[key] = [t[key] for t in text]
+
+        # image preprocessing
+        if super_resolution is not None:
+            if self.feature_extractor.do_resize:
+                images = [self.feature_extractor.resize(np.array(image), self.feature_extractor.size) for image in images]
+            
+            if self.feature_extractor.do_center_crop:
+                images = [self.feature_extractor.center_crop(image, self.feature_extractor.crop_size) for image in images]
+
+            step_size = int(1./super_resolution)
+            images = [img for image in images for img in self.image_shift(image, patch_size, (step_size,step_size))]
+
+        # image encoding
+        image_features = self.feature_extractor(images, return_tensors=return_tensors, **kwargs)
+        
+        if super_resolution is not None:
+            n_shifts = [int(patch_size*super_resolution)] * 2
+
+        n_sub_images = np.prod(n_shifts, dtype=int)
+        encoding["pixel_values"] = [image_features.pixel_values[i:i+n_sub_images] for i in range(0, len(images), n_sub_images)]
+ 
+        return Encoding(encoding)
+    
+
+    def image_shift(self, image, patch_size, shift_sizes):
+        """shift the image by shift_sizes (h,w) and return a list of images"""
+        image = Image.fromarray(image)
+        w, h  = image.size
+        sh,sw = shift_sizes
+        padded_image = Image.new("RGB", (w+patch_size, h+patch_size), (0,0,0))
+        padded_image.paste(image, (patch_size//2, patch_size//2))
+
+        images = []
+        for i_w in range(0,patch_size,sw):
+            for i_h in range(0,patch_size,sh):
+                images.append( np.array(padded_image.crop((i_w, i_h, w+i_w, h+i_h ))) )
+        return images
+        
+
+    def post_process(self, 
+                     outputs,
+                     patch_size=14,
+                     super_resolution=None,
+                     n_shifts=(1,1),
+                     slices=None):
+        """
+        post-process the outputs by slicing and spatial registration. 
+
+        Args:
+            outputs (list):
+                outputs to be post-processed. n_images-list of tensors of (n_subimages, n_targets, n_layers, ...)
+            patch_size (int, optional):
+                The patch size to use when encoding the image.
+            super_resolution (float, optional):
+                The super resolution factor. 1 means full resolution compared to the patch size.
+            n_shifts (tuple, optional):
+                The number of shifts to use when encoding the image.
+            slices (tuple, optional):
+                The slice of the image to crop (h_slice, w_slice)
+
+        Returns:
+            outputs (list):
+                post-processed outputs. n_images-list of arrays of (n_targets, n_layers, ...)
+        """
+        if super_resolution is not None:
+            n_shifts = [int(patch_size*super_resolution)] * 2
+        
+        for img, out in enumerate(outputs):
+
+            out = out.detach().cpu().numpy()
+            if slices is not None:
+                out = out[..., slices[0], slices[1]]
+
+            out = [
+                np.stack([
+                    self.maps_registration(out[:,t,l], n_shifts=n_shifts) for l in range(out.shape[2])
+                ]) for t in range(out.shape[1])
+            ]
+            outputs[img] = np.stack(out)
+        
+        return outputs
+
+
+    def maps_registration(self, maps, n_shifts):
+        """spatial registration of maps, given n_shifts (h,w). expects maps in numpy format"""
+        h,w = maps[0].shape
+        register_h = int(h*n_shifts[0])
+        register_w = int(w*n_shifts[1])
+        
+        map_registered = np.nan*np.zeros((register_h,register_w))
+        for i_w in range(n_shifts[1]):
+            for i_h in range(n_shifts[0]):
+                idxw = np.arange(i_w,register_w,step=n_shifts[1])
+                idxh = np.arange(i_h,register_h,step=n_shifts[0])
+                idxw, idxh = np.meshgrid(idxw, idxh)
+                ii = int(i_w*n_shifts[1] + i_h)
+                map_registered[idxh.flatten(), idxw.flatten()] = maps[ii].flatten()
+
+        return map_registered
+
 
 
 class SemanticMatchingModel(CLIPModel):
@@ -40,10 +211,8 @@ class SemanticMatchingModel(CLIPModel):
         super().__init__(config)
         self.prototype = torch.zeros((1,self.projection_dim))
         self.targets   = targets
-        self.resize    = True
-        self.get_clip_size()
-        self.h_slice   = slices[self.size_clip[0]][0]
-        self.w_slice   = slices[self.size_clip[1]][1]
+        self.get_map_size()
+        self.slices    = slices[self.size_map[0]]
 
 
     def set_prototype(self, processor):
@@ -54,11 +223,11 @@ class SemanticMatchingModel(CLIPModel):
         self.prototype = prototype
 
 
-    def get_clip_size(self):
-        """get the number of patches in CLIP"""
+    def get_map_size(self):
+        """get the number of patches"""
         im_sz = self.config.vision_config.image_size
         ph_sz = self.config.vision_config.patch_size
-        self.size_clip = [ int(im_sz/ph_sz), int(im_sz/ph_sz) ]
+        self.size_map = [ int(im_sz/ph_sz), int(im_sz/ph_sz) ]
 
 
     def get_image_embeds(self, 
@@ -93,17 +262,18 @@ class SemanticMatchingModel(CLIPModel):
 
 
     def get_matches(self, text_embeds, image_embeds, **kwargs):
-        """get matching maps"""
-        matches = [] # matching maps [N_Layer]
+        """get matching maps [n_images,n_texts,n_layers,n_h,n_w]"""
+        matches = []
         for h in image_embeds['hidden_states']:
             match = self.visual_projection(h) # projection onto image-text space
             match = match[:, 1:, :] # take out the classification token
             match = match @ (text_embeds - self.prototype).T # matching
             match = torch.sigmoid(-match) # nonlinearity
-            if self.resize:
-                match = match.reshape( (-1, *self.size_clip, len(text_embeds)) )
-                match = match[:, self.h_slice, self.w_slice, :]
+            match = match.reshape( (-1, *self.size_map, len(text_embeds)) )
             matches.append(match)
+        n_subimages = len(match)
+        matches  = [torch.stack([match[i].permute(2,0,1) for match in matches], dim=1) for i in range(n_subimages)]
+        matches  = torch.stack(matches)
         return matches
 
 
@@ -127,11 +297,11 @@ class SemanticMatchingModel(CLIPModel):
         >>> model = SemanticMatchingModel.from_pretrained("openai/clip-vit-large-patch14")
         >>> processor = CLIPProcessor.from_pretrained("openai/clip-vit-large-patch14")
         
-        >>> url = "http://images.cocodataset.org/train2017/000000304815.jpg"
+        >>> url = "http://images.cocodataset.org/train2017/000000341741.jpg"
         >>> image = Image.open(requests.get(url, stream=True).raw)
 
         >>> inputs = processor(
-        ...     text=["a photo of a keyboard", "a photo of a laptop", "a photo of a mouse"], 
+        ...     text=["laptop", "chair"], 
         ...     images=image, return_tensors="pt", padding=True
         ... )
 
@@ -139,19 +309,23 @@ class SemanticMatchingModel(CLIPModel):
         >>> outputs = model.get_maps(**inputs)  # [n_layers][n_images,height,width,n_texts] matching maps
         ```"""
 
+        if len( input_ids ) != len( pixel_values ):
+            raise ValueError("The number of text and images should be the same.")
+        
+        if position_ids is not None: raise NotImplementedError
+
         # text encoder
-        text_embeds = self.get_text_embeds(
-            input_ids      = input_ids,
-            attention_mask = attention_mask,
-            position_ids   = position_ids
-        )
-        
+        text_embeds = [
+            self.get_text_embeds(
+                input_ids      = ids,
+                attention_mask = mask
+            ) for ids, mask in zip(input_ids, attention_mask)
+        ]
+
         # image encoder
-        image_embeds = self.get_image_embeds(
-            pixel_values=pixel_values
-        )
-        
+        image_embeds = [ self.get_image_embeds(pv) for pv in pixel_values ]
+
         # image-text matching
-        matches = self.get_matches(text_embeds, image_embeds)
-        
+        matches = [ self.get_matches(t,i) for t,i in zip(text_embeds, image_embeds) ]
+
         return matches

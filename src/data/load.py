@@ -5,6 +5,44 @@ import numpy as np
 from pathlib import Path
 from PIL import Image
 
+# TODO : free-viewing data
+# TODO : i think load.py should not be dataset-specific 
+# TODO : let's practice with free-view data first
+
+# learn about TemporaryDirectory
+
+# external_datasets.coco_search.py
+# load_pysaliency
+
+# interacting with pysaliency data format
+    # go to train_deepgaze
+    # load HDF file
+    # do these have stimulus IDs?
+    # can you make it into 
+    # 
+
+
+# class Gaze():
+
+#     def __init__():
+#         pass
+
+#     def get_negatives():
+#         pass
+
+#     def
+
+#     def transform_pysaliency():
+#         # input : HDF file
+#         # output : gaze format
+
+
+# class IMU():
+
+#     def __init__():
+#         pass
+
+
 def load_scanpaths(path, data_split='trainval'):
     """
     load scanpaths from the path.
@@ -94,7 +132,7 @@ def load_images(path, path_outputs=None, data_split='trainval', save_images=True
         return files
     
 
-def load_indices(scanpaths=None, images_idx=None, path_prcd=None, path_scanpath=None, data_split='trainval'):
+def load_indices(scanpaths=None, images_idx=None, path_prcd=None, path_scanpath=None, data_split='trainval', merge=False):
     """
     load indices from the path.
     inputs
@@ -103,6 +141,7 @@ def load_indices(scanpaths=None, images_idx=None, path_prcd=None, path_scanpath=
         path_prcd: path to the processed data
         path_scanpath: path to scanpaths
         data_split: 'trainval', 'test'
+        merge: True if merging TP and TA. False if not.
     
     return
         tp_dict [dict] : dictionary of TP indices, required for score evaluation
@@ -203,5 +242,15 @@ def load_indices(scanpaths=None, images_idx=None, path_prcd=None, path_scanpath=
         'tp': tp_dict_sbj,
         'ta': ta_dict_sbj
     }
+
+    if merge:
+        merge_dict = {
+            'idx_img': np.concatenate([tp_dict['idx_img'], ta_dict['idx_img']]),
+            'idx_tgt': np.concatenate([tp_dict['idx_tgt'], ta_dict['idx_tgt']]),
+            'idx_sbj': np.concatenate([tp_dict['idx_sbj'], ta_dict['idx_sbj']]),
+            'scanpaths': tp_dict['scanpaths'] + ta_dict['scanpaths'],
+            'idx_eval': np.concatenate([tp_dict['idx_eval'], ta_dict['idx_eval']],axis=0),
+        }
+        return merge_dict, sbj_dict
 
     return tp_dict, ta_dict, sbj_dict

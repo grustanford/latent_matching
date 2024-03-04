@@ -4,6 +4,7 @@ export PYTHONPATH := $(PYTHONPATH):$(abspath $(CURDIR))
 # initialization
 init:
 	pip install -r requirements.txt --no-cache-dir
+	pip install -e .
 	git clone https://github.com/matthias-k/DeepGaze models/DeepGaze
 
 # predictions

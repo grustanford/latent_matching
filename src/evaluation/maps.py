@@ -1,26 +1,30 @@
 """evalaute maps with given metrics"""
+# TODO: complete this script
+import os
+import sys
 import pickle
 import argparse
 import numpy as np
 from pathlib import Path
 from scipy.stats import zscore
 
+sys.path.append( str(Path(os.path.dirname(__file__)).parent.absolute()) )
 from data import load
 from evaluation import metrics
 
 LIST_SBJ = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 
 parser = argparse.ArgumentParser(description='Evaluate maps')
-parser.add_argument('--data_split',  type=str, default='trainval', help='data split')
-parser.add_argument('--path_data',   type=str, default='data/external/coco_search18', help='path to the external data')
-parser.add_argument('--path',        type=str, default='data/processed', help='path to the processed data')
-parser.add_argument('--metric',      type=str, default='sauc', help='metric to evaluate')
-parser.add_argument('--prefix',      type=str, default='agg', help='prefix for the output file')
-parser.add_argument('--include',     type=str, default='all', help='inclusion criteria')
-parser.add_argument('--map',         nargs='+',  type=str, default='smm', help='maps to evaluate')
-parser.add_argument('--scan_orders', nargs='+', type=int, default=None, help='scan orders to consider. None for all except initial')
-parser.add_argument('--mixture',        type=bool, default=False, help='whether to consider complementary maps')
-parser.add_argument('--map_mixture',    nargs='+', type=str, default=None, help='maps to evaluate for mixture')
+parser.add_argument('--data_split',   type=str, default='trainval', help='data split')
+parser.add_argument('--path_data',    type=str, default='data/external/coco_search18', help='path to the external data')
+parser.add_argument('--path',         type=str, default='data/processed', help='path to the processed data')
+parser.add_argument('--metric',       type=str, default='sauc', help='metric to evaluate')
+parser.add_argument('--prefix',       type=str, default='agg', help='prefix for the output file')
+parser.add_argument('--include',      type=str, default='all', help='inclusion criteria')
+parser.add_argument('--map',          nargs='+',  type=str, default='smm', help='maps to evaluate')
+parser.add_argument('--scan_orders',  nargs='+', type=int, default=None, help='scan orders to consider. None for all except initial')
+parser.add_argument('--mixture',      type=bool, default=False, help='whether to consider complementary maps')
+parser.add_argument('--map_mixture',  nargs='+', type=str, default=None, help='maps to evaluate for mixture')
 
 args = parser.parse_args()
 data_split  = args.data_split
@@ -39,6 +43,7 @@ if mixture:
     MIX_WEIGHTS = np.linspace(0,1,num=101) # weights for SMM
     MIX_LAYER   = 23 # penultimate layer index for SMM
     
+# TODO: exception handling
 if include == 'all':
     idx_include = None
 
@@ -66,7 +71,7 @@ else:
 
 
 # load / generate fixation positions
-_path_positions = Path(path_prcd)/'scores/{prefix}_fixations_{data_split}.pkl'
+_path_positions = Path(path_prcd)/ f'scores/{prefix}_fixations_{data_split}.pkl'
 if not _path_positions.exists():
     print('####### Fixation positions not found. Generating... #######')
     fixations = {}
@@ -80,12 +85,14 @@ with open(_path_positions, 'rb') as f:
 
 
 # evaluate maps
+# TODO : cannot load maps as matrix. Need to load each map separately.
 if not mixture:
     print('####### Evaluating maps #######')
     for nmap in name_maps:
         print('#######', nmap, '#######')
 
         # load map
+        # TODO: humans do not correspond to this format
         with open( Path(path_prcd)/f'maps/{nmap}/{data_split}.pkl', 'rb' ) as f:
             maps = pickle.load(f)
         maps  = np.stack([v for _,v in maps.items()], axis=0)
