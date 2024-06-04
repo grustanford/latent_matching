@@ -1,8 +1,9 @@
 # data and checkpoints
 debug/
+notebooks/
 assets/*
-/data/
-/models/
+data/
+models/
 
 # cache
 __pycache__/

@@ -29,6 +29,8 @@ TARGETS_COCOSEARCH18 = {
 }
 
 
+# todo : currently, the slices are hardcoded for the coco_search18 dataset
+# todo : slices and padding of images should be automatically determined
 SLICES_COCOSEARCH18 = {
     # slice of the image to crop { clip_size: (h_slice, w_slice) }
     7  : ( slice( 1, 6 ), slice( 0, 7 ) ),
@@ -209,18 +211,18 @@ class SemanticMatchingModel(CLIPModel):
                  targets=TARGETS_COCOSEARCH18,
                  slices=SLICES_COCOSEARCH18):
         super().__init__(config)
-        self.prototype = torch.zeros((1,self.projection_dim))
+        self.origin    = torch.zeros((1,self.projection_dim))
         self.targets   = targets
         self.get_map_size()
         self.slices    = slices[self.size_map[0]]
 
 
-    def set_prototype(self, processor):
-        """set a target prototype representation"""        
+    def set_origin(self, processor):
+        """set the origin of target representations"""        
         target_embeds = processor.tokenizer(text=list(self.targets.values()), return_tensors="pt", padding=True)
         target_embeds = self.get_text_embeds(**target_embeds.to(self.device))
-        prototype = torch.mean(target_embeds, dim=0, keepdims=True)
-        self.prototype = prototype
+        origin = torch.mean(target_embeds, dim=0, keepdims=True)
+        self.origin = origin
 
 
     def get_map_size(self):
@@ -267,7 +269,7 @@ class SemanticMatchingModel(CLIPModel):
         for h in image_embeds['hidden_states']:
             match = self.visual_projection(h) # projection onto image-text space
             match = match[:, 1:, :] # take out the classification token
-            match = match @ (text_embeds - self.prototype).T # matching
+            match = match @ (text_embeds - self.origin).T # matching
             match = torch.sigmoid(-match) # nonlinearity
             match = match.reshape( (-1, *self.size_map, len(text_embeds)) )
             matches.append(match)
@@ -291,22 +293,31 @@ class SemanticMatchingModel(CLIPModel):
         ```python
         >>> from PIL import Image
         >>> import requests
-        >>> from transformers import CLIPProcessor
-        >>> import SemanticMatchingModel
+        >>> from smm import SemanticMatchingModel, SemanticMatchingProcessor
 
         >>> model = SemanticMatchingModel.from_pretrained("openai/clip-vit-large-patch14")
-        >>> processor = CLIPProcessor.from_pretrained("openai/clip-vit-large-patch14")
+        >>> processor = SemanticMatchingProcessor.from_pretrained("openai/clip-vit-large-patch14")
+        >>> model.set_origin(processor)  # set target origin vector
         
         >>> url = "http://images.cocodataset.org/train2017/000000341741.jpg"
         >>> image = Image.open(requests.get(url, stream=True).raw)
 
+        >>> # basic resolution (16x16)
         >>> inputs = processor(
-        ...     text=["laptop", "chair"], 
+        ...     text=["laptop", "chair"],
         ...     images=image, return_tensors="pt", padding=True
         ... )
+        >>> outputs = model.get_maps(**inputs)
+        >>> outputs = processor.post_process(outputs)  # [n_pair][n_tgt][n_layer,h,w] matching maps
 
-        >>> model.set_prototype(processor)  # set prototype target vector
-        >>> outputs = model.get_maps(**inputs)  # [n_layers][n_images,height,width,n_texts] matching maps
+        >>> # higher resolution (224x224)
+        >>> inputs = processor(
+        ...     text=["laptop", "chair"],
+        ...     images=image, return_tensors="pt", padding=True,
+        ...     super_resolution=1.0
+        ... )
+        >>> outputs = model.get_maps(**inputs)
+        >>> outputs = processor.post_process(outputs, super_resolution=1.)  # [n_pair][n_tgt][n_layer,h,w] matching maps
         ```"""
 
         if len( input_ids ) != len( pixel_values ):

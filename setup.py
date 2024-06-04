@@ -4,11 +4,11 @@ __version__ = '0.0.1'
 install_requires = []
 
 setup(
-    name='smm',
+    name='latent_matching',
     version=__version__,
-    description='Semantic Matching Model',
+    description='Latent Matching',
 
-    url='https://github.com/grustanford/semantic_matching',
+    url='https://github.com/grustanford/latent_matching',
 
     # Author details
     author='Hyunwoo Gu',

@@ -5,44 +5,6 @@ import numpy as np
 from pathlib import Path
 from PIL import Image
 
-# TODO : free-viewing data
-# TODO : i think load.py should not be dataset-specific 
-# TODO : let's practice with free-view data first
-
-# learn about TemporaryDirectory
-
-# external_datasets.coco_search.py
-# load_pysaliency
-
-# interacting with pysaliency data format
-    # go to train_deepgaze
-    # load HDF file
-    # do these have stimulus IDs?
-    # can you make it into 
-    # 
-
-
-# class Gaze():
-
-#     def __init__():
-#         pass
-
-#     def get_negatives():
-#         pass
-
-#     def
-
-#     def transform_pysaliency():
-#         # input : HDF file
-#         # output : gaze format
-
-
-# class IMU():
-
-#     def __init__():
-#         pass
-
-
 def load_scanpaths(path, data_split='trainval'):
     """
     load scanpaths from the path.
@@ -93,7 +55,7 @@ def load_images(path, path_outputs=None, data_split='trainval', save_images=True
 
     return
         images [dict] : dictionary of PIL images
-        images_idx [list] : list of image names
+        files [list] : list of image paths
     """
 
     # load scanpaths
@@ -106,13 +68,16 @@ def load_images(path, path_outputs=None, data_split='trainval', save_images=True
     files_tp = glob.glob(str(dir_tp/'**/*.jpg'), recursive=True)
     files_ta = glob.glob(str(dir_ta/'**/*.jpg'), recursive=True)
     files = np.array([f for f in files_tp + files_ta if Path(f).name in names])
+
+    # sort by unique image names
+    filesn = np.array([Path(f).name for f in files])
+    filesn, idx = np.unique(filesn, return_index=True)
+    files = files[idx]
    
     if save_images:
         images = {}
-        for v_jpg in names:
-            path_images = [f for f in files if v_jpg in f]
-            images[ v_jpg ] = Image.open(path_images[0])
-        images_idx = np.array(list(images.keys()))
+        for v_file, v_name in zip(files, filesn):
+            images[ v_name ] = Image.open(v_file)
 
         # saving images
         if path_outputs is not None: 
@@ -121,15 +86,10 @@ def load_images(path, path_outputs=None, data_split='trainval', save_images=True
             
             with open(path_output_images/f'images_{data_split}.pkl', 'wb') as f:
                 pickle.dump(images, f)
-            with open(path_output_images/f'indices_{data_split}.pkl', 'wb') as f:
-                pickle.dump(images_idx, f)
-        return images, images_idx
 
-    else:
-        filesn = np.array([Path(f).name for f in files])
-        _, idx = np.unique(filesn, return_index=True)
-        files  = files[np.sort(idx)]
-        return files
+        return images, files
+
+    return files
     
 
 def load_indices(scanpaths=None, images_idx=None, path_prcd=None, path_scanpath=None, data_split='trainval', merge=False):
@@ -149,9 +109,9 @@ def load_indices(scanpaths=None, images_idx=None, path_prcd=None, path_scanpath=
         sbj_dict [dict] : dictionary of subject indices, required for score evaluation
     """
 
-    if images_idx is None and path_prcd is not None:
-        with open(Path(path_prcd)/'images'/f'indices_{data_split}.pkl', 'rb') as f:
-            images_idx = pickle.load(f)
+    if images_idx is None:
+        files = load_images(path_scanpath, data_split=data_split, save_images=False)
+        images_idx = np.array([Path(f).name for f in files])
 
     # load scanpaths
     if scanpaths is None and path_scanpath is not None:

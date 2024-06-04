@@ -160,10 +160,3 @@ else:
         _path_score.mkdir(parents=True, exist_ok=True)
         with open( _path_score/f'{prefix}_{nmap1}_{nmap2}_{metric}_{data_split}.pkl', 'wb' ) as f:
             pickle.dump(score, f)
-
-
-
-
-
-
-# inclusion criteria

@@ -1,46 +1,43 @@
-# Semantic matching model
-Semantic matching model aims to isolate semantically driven components from human visual search behavior. Our implementation leverages CLIP in a zero-shot manner to generate semantic similarity maps.
+# Latent matching
+Latent matching is a class of methods for template matching that uses the latent representations of neural network models. A typical use case is the localization or segmentation of an image based on a given query.
+
+## Semantic matching
+Semantic matching model uses text inputs to perform latent matching. Our implementation leverages CLIP in a zero-shot manner.
 
 ![](assets/readme/maps.png)
 
-## Model usage
+### Model usage
 ```python
 from PIL import Image
 import requests
-from transformers import CLIPProcessor
-from smm import SemanticMatchingModel
+from smm import SemanticMatchingModel, SemanticMatchingProcessor
 
 model = SemanticMatchingModel.from_pretrained("openai/clip-vit-large-patch14")
-processor = CLIPProcessor.from_pretrained("openai/clip-vit-large-patch14")
+processor = SemanticMatchingProcessor.from_pretrained("openai/clip-vit-large-patch14")
+model.set_origin(processor)  # set target origin vector
 
 url = "http://images.cocodataset.org/train2017/000000341741.jpg"
 image = Image.open(requests.get(url, stream=True).raw)
 
+"""basic resolution (16x16)"""
 inputs = processor(
     text=["laptop", "chair"], 
     images=image, return_tensors="pt", padding=True
 )
+with torch.no_grad():
+    outputs = model.get_maps(**inputs)  
+    outputs = processor.post_process(outputs) # [n_pair][n_tgt][n_layer,h,w] matching maps
 
-model.set_prototype(processor)  # set prototype target vector
-outputs = model.get_maps(**inputs)  # [n_layers][n_images,h,w,n_texts] matching maps
+"""higher resolution (224x224)"""
+inputs = processor(
+    text=["laptop", "chair"], 
+    images=image, return_tensors="pt", padding=True,
+    super_resolution=1.0
+)
+with torch.no_grad():
+    outputs = model.get_maps(**inputs)
+    outputs = processor.post_process(outputs, super_resolution=1.)
 ```
-
-## Model evaluation
-We evaluated our model using human visual search behavior, COCO-SEARCH18 dataset. We report sAUC, uAUC, and NSS scores compared to other models, such as DeepGaze-IIE and Itti-Koch model.
-
-```Makefile
-make init # install dependencies
-make generate-predictions # generate predictions
-make evaluate-predictions # evaluate predictions
-```
-
-When you run `make generate-predictions`, it will generate predictions for COCO-SEARCH18 dataset. The predictions will be saved under `data/processed/maps/`, with the structure `{image_name}.pkl`. 
-
-When you run `make evaluate-predictions`, it will evaluate the predictions and save the results under `data/processed/scores/`, with the structure `{model_name}.pkl`.
-
-
-## Notebooks
-To replicate the figures, visit notebooks/ and run the corresponding jupyter notebook.
 
 ## References
 - [CLIP](https://arxiv.org/abs/2103.00020)
